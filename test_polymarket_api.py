@@ -3,6 +3,15 @@ Script to test and inspect real Polymarket NBA markets
 """
 import requests
 import json
+import sys
+import io
+
+# Fix Windows encoding
+if sys.platform == 'win32':
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    except:
+        pass
 
 def test_polymarket_markets():
     """Fetch and display real NBA markets from Polymarket"""
