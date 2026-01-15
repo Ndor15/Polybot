@@ -55,7 +55,10 @@ def test_polymarket_markets():
                 outcomes = market.get('outcomes', [])
                 print(f"    Outcomes:")
                 for outcome in outcomes:
-                    print(f"      - {outcome.get('name', 'N/A')}: {outcome.get('price', 'N/A')}")
+                    if isinstance(outcome, dict):
+                        print(f"      - {outcome.get('name', 'N/A')}: {outcome.get('price', 'N/A')}")
+                    else:
+                        print(f"      - {outcome}")
 
             print()
 
@@ -110,9 +113,13 @@ def test_team_name_formats():
 
             # Extract team names from question
             for outcome in market.get('outcomes', []):
-                name = outcome.get('name', '')
-                if name not in ['Yes', 'No', 'Over', 'Under']:
-                    team_patterns.add(name)
+                if isinstance(outcome, dict):
+                    name = outcome.get('name', '')
+                    if name not in ['Yes', 'No', 'Over', 'Under']:
+                        team_patterns.add(name)
+                elif isinstance(outcome, str):
+                    if outcome not in ['Yes', 'No', 'Over', 'Under']:
+                        team_patterns.add(outcome)
 
     print("Found team name patterns:")
     for pattern in sorted(team_patterns):
