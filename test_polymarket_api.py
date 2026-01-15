@@ -53,12 +53,23 @@ def test_polymarket_markets():
 
                 # Show outcomes
                 outcomes = market.get('outcomes', [])
+
+                # Parse if it's a JSON string
+                if isinstance(outcomes, str):
+                    try:
+                        outcomes = json.loads(outcomes)
+                    except:
+                        pass
+
                 print(f"    Outcomes:")
-                for outcome in outcomes:
-                    if isinstance(outcome, dict):
-                        print(f"      - {outcome.get('name', 'N/A')}: {outcome.get('price', 'N/A')}")
-                    else:
-                        print(f"      - {outcome}")
+                if isinstance(outcomes, list):
+                    for outcome in outcomes:
+                        if isinstance(outcome, dict):
+                            print(f"      - {outcome.get('name', 'N/A')}: {outcome.get('price', 'N/A')}")
+                        else:
+                            print(f"      - {outcome}")
+                else:
+                    print(f"      Raw: {outcomes}")
 
             print()
 
@@ -111,15 +122,26 @@ def test_team_name_formats():
         for market in event.get('markets', []):
             question = market.get('question', '')
 
-            # Extract team names from question
-            for outcome in market.get('outcomes', []):
-                if isinstance(outcome, dict):
-                    name = outcome.get('name', '')
-                    if name not in ['Yes', 'No', 'Over', 'Under']:
-                        team_patterns.add(name)
-                elif isinstance(outcome, str):
-                    if outcome not in ['Yes', 'No', 'Over', 'Under']:
-                        team_patterns.add(outcome)
+            # Extract team names from outcomes
+            outcomes = market.get('outcomes', [])
+
+            # Parse if JSON string
+            if isinstance(outcomes, str):
+                try:
+                    outcomes = json.loads(outcomes)
+                except:
+                    outcomes = []
+
+            # Extract team names
+            if isinstance(outcomes, list):
+                for outcome in outcomes:
+                    if isinstance(outcome, dict):
+                        name = outcome.get('name', '')
+                        if name and name not in ['Yes', 'No', 'Over', 'Under']:
+                            team_patterns.add(name)
+                    elif isinstance(outcome, str):
+                        if outcome and outcome not in ['Yes', 'No', 'Over', 'Under']:
+                            team_patterns.add(outcome)
 
     print("Found team name patterns:")
     for pattern in sorted(team_patterns):
