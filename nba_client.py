@@ -139,6 +139,32 @@ class NBAClient:
         self.session.headers.update(self.headers)
         self._warned_no_key = False
 
+    def _is_game_live(self, status: str) -> bool:
+        """
+        Check if a game status indicates it's currently in progress
+
+        NBA API returns various status formats:
+        - "1st Qtr", "2nd Qtr", "3rd Qtr", "4th Qtr" (quarters)
+        - "Halftime" (between 2nd and 3rd quarter)
+        - "OT" (overtime)
+        - "in_progress", "live" (generic live status)
+        - ISO timestamp (e.g., "2026-01-16T00:00:00Z") = scheduled game
+        - "Final" = game finished
+        """
+        if not status:
+            return False
+
+        status_lower = status.lower()
+
+        # Check for live indicators
+        live_keywords = ["qtr", "quarter", "halftime", "half", "ot", "overtime", "in_progress", "live"]
+
+        for keyword in live_keywords:
+            if keyword in status_lower:
+                return True
+
+        return False
+
     def get_live_games(self) -> List[NBAGame]:
         """
         Fetch all currently live NBA games
@@ -161,7 +187,7 @@ class NBAClient:
                 status = game_data.get("status", "")
 
                 # Only track live games (in progress)
-                if status not in ["in_progress", "live"]:
+                if not self._is_game_live(status):
                     continue
 
                 # Create or update game object
