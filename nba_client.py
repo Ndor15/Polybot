@@ -131,11 +131,13 @@ class NBAClient:
         self.base_url = config.NBA_API_BASE_URL
         self.headers = {}
         if config.NBA_API_KEY:
-            self.headers["Authorization"] = config.NBA_API_KEY
+            # BallDontLie API v1 uses direct API key in Authorization header
+            self.headers["Authorization"] = f"{config.NBA_API_KEY}"
 
         self.games: Dict[str, NBAGame] = {}
         self.session = requests.Session()
         self.session.headers.update(self.headers)
+        self._warned_no_key = False
 
     def get_live_games(self) -> List[NBAGame]:
         """
@@ -181,6 +183,17 @@ class NBAClient:
 
             return live_games
 
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401 and not self._warned_no_key:
+                logger.error(f"NBA API returned 401 Unauthorized.")
+                logger.error("You need a free API key from https://www.balldontlie.io/")
+                logger.error("1. Sign up for free at balldontlie.io")
+                logger.error("2. Get your API key")
+                logger.error("3. Add NBA_API_KEY=your_key to your .env file")
+                self._warned_no_key = True
+            else:
+                logger.error(f"Error fetching live games: {e}")
+            return []
         except Exception as e:
             logger.error(f"Error fetching live games: {e}")
             return []

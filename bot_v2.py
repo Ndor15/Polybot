@@ -44,7 +44,18 @@ except ImportError:
 
 # Configure logging
 def setup_logging():
-    """Setup colored logging"""
+    """Setup colored logging (Windows compatible)"""
+    # Configure console handler with UTF-8 on Windows
+    import sys
+    if sys.platform == 'win32':
+        # Try to enable UTF-8 mode on Windows
+        try:
+            import io
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+        except:
+            pass
+
     handler = colorlog.StreamHandler()
     handler.setFormatter(colorlog.ColoredFormatter(
         '%(log_color)s%(asctime)s | %(levelname)-8s | %(message)s',
@@ -58,7 +69,7 @@ def setup_logging():
         }
     ))
 
-    file_handler = logging.FileHandler(config.LOG_FILE)
+    file_handler = logging.FileHandler(config.LOG_FILE, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s'
     ))
