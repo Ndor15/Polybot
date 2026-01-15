@@ -7,6 +7,8 @@ import logging
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 import time
+import requests
+from web3 import Web3
 from config import config
 
 try:
@@ -90,6 +92,16 @@ class PolymarketTrader:
         if not self.private_key:
             raise ValueError("POLYMARKET_PRIVATE_KEY not set in .env file")
 
+        # Get wallet address from private key
+        try:
+            from eth_account import Account
+            account = Account.from_key(self.private_key)
+            self.wallet_address = account.address
+            logger.info(f"Wallet address: {self.wallet_address}")
+        except Exception as e:
+            logger.warning(f"Could not derive wallet address: {e}")
+            self.wallet_address = None
+
         # Initialize client
         try:
             self.client = ClobClient(
@@ -113,38 +125,48 @@ class PolymarketTrader:
 
         self.positions: Dict[str, RealPosition] = {}
 
+        # Polygon RPC for direct balance checks
+        self.w3 = Web3(Web3.HTTPProvider("https://polygon-rpc.com"))
+        self.usdc_address = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # USDC on Polygon
+
     def get_balance(self) -> float:
-        """Get current USDC balance"""
+        """Get current USDC balance directly from blockchain"""
         try:
-            # Get balance and allowance from Polymarket
-            balance_response = self.client.get_balance_allowance()
-
-            # Handle different response formats
-            if balance_response:
-                # Try different keys that might contain the balance
-                balance = 0.0
-                if isinstance(balance_response, dict):
-                    balance = float(balance_response.get("balance",
-                                  balance_response.get("collateral_balance", 0)))
-                elif isinstance(balance_response, (int, float)):
-                    balance = float(balance_response)
-
-                # Convert from smallest unit if needed (USDC has 6 decimals)
-                if balance > 1000000:  # Likely in smallest unit
-                    balance = balance / 1000000
-
-                logger.debug(f"Current balance: ${balance:.2f} USDC")
-                return balance
-            else:
-                logger.warning("Empty balance response from API")
+            if not self.wallet_address:
+                logger.error("Wallet address not available")
                 return 0.0
 
-        except AttributeError as e:
-            logger.error(f"Error fetching balance - signature_type issue: {e}")
-            logger.error("Try restarting the bot or check your wallet configuration")
-            return 0.0
+            # USDC contract ABI (just the balanceOf function)
+            usdc_abi = [
+                {
+                    "constant": True,
+                    "inputs": [{"name": "_owner", "type": "address"}],
+                    "name": "balanceOf",
+                    "outputs": [{"name": "balance", "type": "uint256"}],
+                    "type": "function"
+                }
+            ]
+
+            # Create contract instance
+            usdc_contract = self.w3.eth.contract(
+                address=Web3.to_checksum_address(self.usdc_address),
+                abi=usdc_abi
+            )
+
+            # Get balance
+            balance_wei = usdc_contract.functions.balanceOf(
+                Web3.to_checksum_address(self.wallet_address)
+            ).call()
+
+            # Convert from smallest unit (USDC has 6 decimals)
+            balance = balance_wei / 1_000_000
+
+            logger.debug(f"Current balance: ${balance:.2f} USDC")
+            return balance
+
         except Exception as e:
-            logger.error(f"Error fetching balance: {e}")
+            logger.error(f"Error fetching balance from blockchain: {e}")
+            logger.error("Make sure you have USDC on Polygon network")
             return 0.0
 
     def get_market_info(self, token_id: str) -> Optional[Dict]:
