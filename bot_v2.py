@@ -225,27 +225,40 @@ class NBAPolymarketBotV2:
                 # 5. Analyze games and generate signals
                 all_signals = []
                 for game in live_games:
+                    logger.info(f"Analyzing: {game.away_team} @ {game.home_team} (Score: {game.away_score}-{game.home_score}, Period: {game.period})")
                     signals = self.signal_analyzer.analyze_game(game)
+
+                    logger.info(f"  Generated {len(signals)} signals for this game")
 
                     # Match each signal to a market
                     for signal in signals:
                         market = self.market_matcher.match_game_to_market(game, markets)
                         if market:
+                            logger.debug(f"  Matched signal to market: {market.get('event_title', 'N/A')}")
                             signal.metadata["market"] = market
                             all_signals.append(signal)
+                        else:
+                            logger.warning(f"  No market found for signal: {signal}")
 
                 if all_signals:
-                    logger.info(f"🎯 Generated {len(all_signals)} trading signals")
+                    logger.info(f"🎯 Total signals after matching: {len(all_signals)}")
                     for sig in all_signals:
                         logger.info(f"   {sig}")
+                else:
+                    logger.info("No signals generated or no markets matched")
 
                 # 6. Filter and execute best signal
                 high_conf_signals = self.signal_analyzer.filter_signals(all_signals, min_confidence=0.65)
 
+                logger.info(f"Signals after confidence filter (>0.65): {len(high_conf_signals)}")
+
                 if high_conf_signals:
                     best_signal = self.signal_analyzer.get_best_signal(high_conf_signals)
                     if best_signal:
+                        logger.info(f"Executing best signal: {best_signal}")
                         self._execute_signal(best_signal)
+                else:
+                    logger.info("No high-confidence signals to execute")
 
                 # 7. Display metrics every 10 iterations
                 if self.iteration % 10 == 0:
