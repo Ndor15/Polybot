@@ -14,6 +14,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Import NBAGame class for compatibility
+try:
+    from nba_client import NBAGame
+except ImportError:
+    # Define a minimal NBAGame class if import fails
+    class NBAGame:
+        def __init__(self, game_id: str, home_team: str, away_team: str):
+            self.game_id = game_id
+            self.home_team = home_team
+            self.away_team = away_team
+            self.home_score = 0
+            self.away_score = 0
+            self.period = 0
+            self.time_remaining = ""
+            self.status = "scheduled"
+            self.score_history = []
+
+        def update_score(self, home_score: int, away_score: int, period: int, time_remaining: str, status: str):
+            self.home_score = home_score
+            self.away_score = away_score
+            self.period = period
+            self.time_remaining = time_remaining
+            self.status = status
+
 
 class NBAOfficialClient:
     """
@@ -38,21 +62,14 @@ class NBAOfficialClient:
         self.cache = {}
         self.cache_duration = 5  # Cache for 5 seconds
 
-    def get_live_games(self) -> List[Dict]:
+        # Track games for momentum tracking
+        self.games_tracker: Dict[str, NBAGame] = {}
+
+    def get_live_games(self) -> List[NBAGame]:
         """
         Fetch all games for today using scoreboard endpoint
 
-        Returns: List of game dicts with structure:
-        {
-            'game_id': str,
-            'home_team': str,
-            'away_team': str,
-            'home_score': int,
-            'away_score': int,
-            'period': int,
-            'status': str,
-            'time_remaining': str
-        }
+        Returns: List of NBAGame objects (compatible with signal_analyzer)
         """
         # Check cache
         now = time.time()
@@ -82,12 +99,12 @@ class NBAOfficialClient:
             scoreboard = data.get('scoreboard', {})
             game_header = scoreboard.get('games', [])
 
-            for game in game_header:
-                game_id = game.get('gameId', '')
+            for game_data in game_header:
+                game_id = game_data.get('gameId', '')
 
                 # Get team info
-                home_team = game.get('homeTeam', {})
-                away_team = game.get('awayTeam', {})
+                home_team = game_data.get('homeTeam', {})
+                away_team = game_data.get('awayTeam', {})
 
                 home_name = home_team.get('teamName', '')
                 away_name = away_team.get('teamName', '')
@@ -95,26 +112,28 @@ class NBAOfficialClient:
                 away_score = away_team.get('score', 0)
 
                 # Get game status
-                game_status = game.get('gameStatus', 1)
-                period = game.get('period', 0)
-                game_time = game.get('gameClock', '')
+                game_status = game_data.get('gameStatus', 1)
+                period = game_data.get('period', 0)
+                game_time = game_data.get('gameClock', '')
 
                 # Status: 1=scheduled, 2=live, 3=final
                 if game_status == 2:  # Live game
-                    status_text = f"Period {period}"
-                    if game_time:
-                        status_text = f"{period}Q {game_time}"
+                    status_text = "live"
+                    time_remaining = game_time or f"{period}Q"
 
-                    games.append({
-                        'game_id': game_id,
-                        'home_team': f"{home_team.get('teamCity', '')} {home_name}",
-                        'away_team': f"{away_team.get('teamCity', '')} {away_name}",
-                        'home_score': home_score,
-                        'away_score': away_score,
-                        'period': period,
-                        'status': status_text,
-                        'time_remaining': game_time
-                    })
+                    home_team_full = f"{home_team.get('teamCity', '')} {home_name}".strip()
+                    away_team_full = f"{away_team.get('teamCity', '')} {away_name}".strip()
+
+                    # Create or update NBAGame object
+                    if game_id in self.games_tracker:
+                        game_obj = self.games_tracker[game_id]
+                        game_obj.update_score(home_score, away_score, period, time_remaining, status_text)
+                    else:
+                        game_obj = NBAGame(game_id, home_team_full, away_team_full)
+                        game_obj.update_score(home_score, away_score, period, time_remaining, status_text)
+                        self.games_tracker[game_id] = game_obj
+
+                    games.append(game_obj)
 
             # Cache the result
             self.cache['scoreboard'] = (now, games)

@@ -92,8 +92,8 @@ class NBAPolymarketBotV2:
         self.paper_mode = paper_mode
 
         # Initialize components
-        self.nba_client = NBAClient()
-        self.nba_official_client = NBAOfficialClient()  # For detailed player stats
+        # Use NBA Official API (more permissive, no rate limits)
+        self.nba_client = NBAOfficialClient()  # Primary client for live games
         self.signal_analyzer = SignalAnalyzer()
         self.player_prop_analyzer = PlayerPropAnalyzer(config)  # For player prop analysis
         self.risk_manager = RiskManager(max_total_exposure_usdc=starting_balance * 0.5)
@@ -455,7 +455,7 @@ class NBAPolymarketBotV2:
 
         try:
             # Fetch detailed player box scores
-            box_scores = self.nba_official_client.get_player_box_scores(game.game_id)
+            box_scores = self.nba_client.get_player_box_scores(game.game_id)
 
             home_players = box_scores.get('home_players', [])
             away_players = box_scores.get('away_players', [])
@@ -483,7 +483,7 @@ class NBAPolymarketBotV2:
                     continue
 
                 # Add pacing data to player stats
-                player['pacing'] = self.nba_official_client.get_player_pacing(
+                player['pacing'] = self.nba_client.get_player_pacing(
                     player,
                     minutes_played,
                     game.period
