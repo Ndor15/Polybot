@@ -95,7 +95,9 @@ class PolymarketTrader:
             self.client = ClobClient(
                 self.host,
                 key=self.private_key,
-                chain_id=self.chain_id
+                chain_id=self.chain_id,
+                signature_type=0,  # 0 = EOA (standard wallet like MetaMask)
+                funder=None  # Use key address as funder
             )
 
             # Generate and set API credentials
@@ -114,10 +116,33 @@ class PolymarketTrader:
     def get_balance(self) -> float:
         """Get current USDC balance"""
         try:
-            balance_info = self.client.get_balance_allowance()
-            balance = float(balance_info.get("balance", 0))
-            logger.debug(f"Current balance: ${balance:.2f} USDC")
-            return balance
+            # Get balance and allowance from Polymarket
+            balance_response = self.client.get_balance_allowance()
+
+            # Handle different response formats
+            if balance_response:
+                # Try different keys that might contain the balance
+                balance = 0.0
+                if isinstance(balance_response, dict):
+                    balance = float(balance_response.get("balance",
+                                  balance_response.get("collateral_balance", 0)))
+                elif isinstance(balance_response, (int, float)):
+                    balance = float(balance_response)
+
+                # Convert from smallest unit if needed (USDC has 6 decimals)
+                if balance > 1000000:  # Likely in smallest unit
+                    balance = balance / 1000000
+
+                logger.debug(f"Current balance: ${balance:.2f} USDC")
+                return balance
+            else:
+                logger.warning("Empty balance response from API")
+                return 0.0
+
+        except AttributeError as e:
+            logger.error(f"Error fetching balance - signature_type issue: {e}")
+            logger.error("Try restarting the bot or check your wallet configuration")
+            return 0.0
         except Exception as e:
             logger.error(f"Error fetching balance: {e}")
             return 0.0
