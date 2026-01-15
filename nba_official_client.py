@@ -89,9 +89,30 @@ class NBAOfficialClient:
                 'LeagueID': '00'
             }
 
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+            # Retry logic with exponential backoff
+            max_retries = 3
+            retry_delay = 2  # seconds
+
+            for attempt in range(max_retries):
+                try:
+                    response = self.session.get(url, params=params, timeout=30)  # Increased timeout to 30s
+                    response.raise_for_status()
+                    data = response.json()
+                    break  # Success, exit retry loop
+                except requests.exceptions.Timeout:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"NBA API timeout, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        raise  # Last attempt failed, raise the exception
+                except requests.exceptions.RequestException as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"NBA API error: {e}, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    else:
+                        raise
 
             games = []
 
@@ -198,9 +219,30 @@ class NBAOfficialClient:
                 'RangeType': '2'
             }
 
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+            # Retry logic with exponential backoff
+            max_retries = 3
+            retry_delay = 2
+
+            for attempt in range(max_retries):
+                try:
+                    response = self.session.get(url, params=params, timeout=30)  # Increased timeout
+                    response.raise_for_status()
+                    data = response.json()
+                    break
+                except requests.exceptions.Timeout:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Box score API timeout for game {game_id}, retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    else:
+                        raise
+                except requests.exceptions.RequestException as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Box score API error for game {game_id}: {e}, retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    else:
+                        raise
 
             all_players = []
 
