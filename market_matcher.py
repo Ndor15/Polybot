@@ -294,6 +294,127 @@ class MarketMatcher:
 
         return None
 
+    def find_player_prop_markets(
+        self,
+        game: NBAGame,
+        player_name: str,
+        markets: List[Dict]
+    ) -> List[Dict]:
+        """
+        Find all player prop markets for a specific player in a game
+
+        Args:
+            game: NBAGame object
+            player_name: Player name (e.g., "Ja Morant")
+            markets: List of all Polymarket markets
+
+        Returns: List of markets for this player (points, assists, rebounds, etc.)
+        """
+        player_markets = []
+
+        # Normalize team names for filtering
+        home_norm = self.normalizer.normalize(game.home_team)
+        away_norm = self.normalizer.normalize(game.away_team)
+
+        # Clean player name variations
+        player_parts = player_name.split()
+        player_first = player_parts[0] if len(player_parts) > 0 else ""
+        player_last = player_parts[-1] if len(player_parts) > 0 else ""
+
+        for market in markets:
+            question = market.get("question", "")
+            description = market.get("description", "")
+            title = market.get("title", "")
+
+            # Check if this is a player prop (contains player name)
+            market_text = f"{question} {description} {title}".lower()
+
+            # Must contain player name
+            player_in_market = (
+                player_name.lower() in market_text or
+                (player_first.lower() in market_text and player_last.lower() in market_text)
+            )
+
+            if not player_in_market:
+                continue
+
+            # Must be related to the game (has one of the team names)
+            game_in_market = (
+                self._team_in_text(home_norm, market_text) or
+                self._team_in_text(away_norm, market_text)
+            )
+
+            if not game_in_market:
+                # If no team found, still include if it's clearly a prop market
+                # (has stat keywords like "points", "assists", "rebounds")
+                if not any(word in market_text for word in ["point", "assist", "rebound", "three", "block", "steal"]):
+                    continue
+
+            # Must be a prop market (has stat keywords or "over"/"under")
+            is_prop_market = any(word in question.lower() for word in [
+                "point", "assist", "rebound", "over", "under",
+                "three", "block", "steal", "turno", "pra"  # PRA = Points+Rebounds+Assists
+            ])
+
+            if is_prop_market:
+                player_markets.append(market)
+
+        logger.debug(f"Found {len(player_markets)} prop markets for {player_name}")
+        return player_markets
+
+    def get_all_player_names_from_markets(self, markets: List[Dict]) -> List[str]:
+        """
+        Extract all unique player names from prop markets
+
+        Returns: List of player names mentioned in markets
+        """
+        player_names = set()
+
+        for market in markets:
+            question = market.get("question", "")
+
+            # Look for player name patterns
+            # Typically: "FirstName LastName: Stat Over X"
+            import re
+            match = re.match(r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+):\s*', question)
+            if match:
+                player_names.add(match.group(1).strip())
+
+        return sorted(list(player_names))
+
+    def get_token_id_for_prop_outcome(
+        self,
+        market: Dict,
+        side: str  # 'over' or 'under'
+    ) -> Optional[str]:
+        """
+        Get token ID for over/under outcome in a prop market
+
+        Args:
+            market: Market dict
+            side: 'over' or 'under'
+
+        Returns: Token ID for the specified side
+        """
+        outcomes = market.get("outcomes", [])
+
+        if not outcomes:
+            return None
+
+        # Look for outcome matching the side
+        for outcome in outcomes:
+            outcome_name = outcome.get("name", "").lower()
+
+            if side.lower() in outcome_name or (side == 'over' and 'yes' in outcome_name):
+                return outcome.get("token_id")
+
+        # If not found, default behavior
+        if len(outcomes) >= 2:
+            # Assume first outcome is 'over' or 'yes'
+            return outcomes[0 if side == 'over' else 1].get("token_id")
+
+        return None
+
 
 if __name__ == "__main__":
     # Test the matcher

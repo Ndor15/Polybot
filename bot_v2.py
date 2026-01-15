@@ -28,7 +28,9 @@ import colorlog
 
 from config import config
 from nba_client import NBAClient, NBAGame
+from nba_official_client import NBAOfficialClient
 from signal_analyzer import SignalAnalyzer, TradingSignal, SignalDirection
+from player_prop_analyzer import PlayerPropAnalyzer, PlayerPropSignal
 from risk_manager import RiskManager
 from market_matcher import MarketMatcher
 
@@ -91,7 +93,9 @@ class NBAPolymarketBotV2:
 
         # Initialize components
         self.nba_client = NBAClient()
+        self.nba_official_client = NBAOfficialClient()  # For detailed player stats
         self.signal_analyzer = SignalAnalyzer()
+        self.player_prop_analyzer = PlayerPropAnalyzer(config)  # For player prop analysis
         self.risk_manager = RiskManager(max_total_exposure_usdc=starting_balance * 0.5)
         self.market_matcher = MarketMatcher()
 
@@ -222,13 +226,16 @@ class NBAPolymarketBotV2:
                 # 4. Check exits (SL/TP/Time)
                 self._check_exits(markets)
 
-                # 5. Analyze games and generate signals
+                # 5. Analyze games and generate signals (GAME-LEVEL + PLAYER PROPS)
                 all_signals = []
+                all_player_prop_signals = []
+
                 for game in live_games:
                     logger.info(f"Analyzing: {game.away_team} @ {game.home_team} (Score: {game.away_score}-{game.home_score}, Period: {game.period})")
-                    signals = self.signal_analyzer.analyze_game(game)
 
-                    logger.info(f"  Generated {len(signals)} signals for this game")
+                    # 5a. Game-level signals (momentum, lead changes, etc.)
+                    signals = self.signal_analyzer.analyze_game(game)
+                    logger.info(f"  Generated {len(signals)} game-level signals")
 
                     # Match each signal to a market
                     for signal in signals:
@@ -240,23 +247,56 @@ class NBAPolymarketBotV2:
                         else:
                             logger.warning(f"  No market found for signal: {signal}")
 
+                    # 5b. Player prop signals (points, assists, rebounds, etc.)
+                    try:
+                        prop_signals = self._analyze_player_props(game, markets)
+                        logger.info(f"  Generated {len(prop_signals)} player prop signals")
+                        all_player_prop_signals.extend(prop_signals)
+                    except Exception as e:
+                        logger.error(f"  Error analyzing player props: {e}", exc_info=True)
+
+                # 6. Combine and display all signals
+                total_signals = len(all_signals) + len(all_player_prop_signals)
+
                 if all_signals:
-                    logger.info(f"🎯 Total signals after matching: {len(all_signals)}")
+                    logger.info(f"🎯 Game-level signals: {len(all_signals)}")
                     for sig in all_signals:
                         logger.info(f"   {sig}")
-                else:
-                    logger.info("No signals generated or no markets matched")
 
-                # 6. Filter and execute best signal
+                if all_player_prop_signals:
+                    logger.info(f"🏃 Player prop signals: {len(all_player_prop_signals)}")
+                    for sig in all_player_prop_signals[:5]:  # Show top 5
+                        logger.info(f"   {sig.player_name}: {sig.stat_type} {sig.side.upper()} {sig.market_line} (conf: {sig.confidence:.2f})")
+
+                if total_signals == 0:
+                    logger.info("No signals generated")
+
+                # 7. Filter and execute best signal (game-level)
                 high_conf_signals = self.signal_analyzer.filter_signals(all_signals, min_confidence=0.65)
+                logger.info(f"Game signals after confidence filter (>0.65): {len(high_conf_signals)}")
 
-                logger.info(f"Signals after confidence filter (>0.65): {len(high_conf_signals)}")
+                # Filter player prop signals
+                high_conf_prop_signals = [s for s in all_player_prop_signals if s.confidence >= 0.65]
+                logger.info(f"Player prop signals after confidence filter (>0.65): {len(high_conf_prop_signals)}")
 
-                if high_conf_signals:
-                    best_signal = self.signal_analyzer.get_best_signal(high_conf_signals)
-                    if best_signal:
-                        logger.info(f"Executing best signal: {best_signal}")
-                        self._execute_signal(best_signal)
+                # Execute best signal (prioritize higher confidence)
+                best_game_signal = self.signal_analyzer.get_best_signal(high_conf_signals) if high_conf_signals else None
+                best_prop_signal = max(high_conf_prop_signals, key=lambda s: s.confidence) if high_conf_prop_signals else None
+
+                # Choose the signal with highest confidence
+                if best_game_signal and best_prop_signal:
+                    if best_prop_signal.confidence > best_game_signal.confidence:
+                        logger.info(f"📊 Executing best PLAYER PROP signal: {best_prop_signal.player_name} {best_prop_signal.stat_type} {best_prop_signal.side}")
+                        self._execute_player_prop_signal(best_prop_signal)
+                    else:
+                        logger.info(f"⚽ Executing best GAME signal: {best_game_signal}")
+                        self._execute_signal(best_game_signal)
+                elif best_prop_signal:
+                    logger.info(f"📊 Executing best PLAYER PROP signal: {best_prop_signal.player_name} {best_prop_signal.stat_type} {best_prop_signal.side}")
+                    self._execute_player_prop_signal(best_prop_signal)
+                elif best_game_signal:
+                    logger.info(f"⚽ Executing best GAME signal: {best_game_signal}")
+                    self._execute_signal(best_game_signal)
                 else:
                     logger.info("No high-confidence signals to execute")
 
@@ -400,6 +440,193 @@ class NBAPolymarketBotV2:
             logger.info(f"✅ Position opened successfully")
         else:
             logger.error(f"❌ Failed to open position")
+
+    def _analyze_player_props(self, game: NBAGame, markets: List[dict]) -> List[PlayerPropSignal]:
+        """
+        Analyze player props for a game
+
+        Args:
+            game: NBAGame object
+            markets: List of available Polymarket markets
+
+        Returns: List of PlayerPropSignal objects
+        """
+        all_prop_signals = []
+
+        try:
+            # Fetch detailed player box scores
+            box_scores = self.nba_official_client.get_player_box_scores(game.game_id)
+
+            home_players = box_scores.get('home_players', [])
+            away_players = box_scores.get('away_players', [])
+            all_players = home_players + away_players
+
+            if not all_players:
+                logger.debug(f"No player box scores available for game {game.game_id}")
+                return []
+
+            # Calculate score differential
+            score_diff = game.home_score - game.away_score
+
+            # For each player, find their prop markets and analyze
+            for player in all_players:
+                player_name = player.get('name', '')
+                if not player_name:
+                    continue
+
+                # Parse minutes
+                minutes_str = player.get('minutes', 'PT00M00.00S')
+                minutes_played = self._parse_minutes(minutes_str)
+
+                # Skip players with little playing time
+                if minutes_played < 5.0:
+                    continue
+
+                # Add pacing data to player stats
+                player['pacing'] = self.nba_official_client.get_player_pacing(
+                    player,
+                    minutes_played,
+                    game.period
+                )
+
+                # Also add game_id for signal tracking
+                player['game_id'] = game.game_id
+
+                # Find all prop markets for this player
+                player_markets = self.market_matcher.find_player_prop_markets(
+                    game,
+                    player_name,
+                    markets
+                )
+
+                if not player_markets:
+                    continue
+
+                # Analyze each prop
+                signals = self.player_prop_analyzer.analyze_player_props(
+                    player_stats=player,
+                    period=game.period,
+                    score_differential=score_diff,
+                    player_markets=player_markets
+                )
+
+                # Add market info to signals
+                for signal in signals:
+                    # Find the matching market
+                    matching_market = None
+                    for market in player_markets:
+                        question = market.get('question', '').lower()
+                        if signal.stat_type in question and str(signal.market_line) in question:
+                            matching_market = market
+                            break
+
+                    if matching_market:
+                        signal.metadata = {'market': matching_market}
+                        all_prop_signals.append(signal)
+
+        except Exception as e:
+            logger.error(f"Error in _analyze_player_props: {e}", exc_info=True)
+
+        return all_prop_signals
+
+    def _execute_player_prop_signal(self, signal: PlayerPropSignal):
+        """Execute a player prop signal"""
+        logger.info(f"\n📊 Executing player prop: {signal.player_name} - {signal.stat_type} {signal.side.upper()} {signal.market_line}")
+        logger.info(f"   Current: {signal.current_value} | Projected: {signal.projected_value}")
+        logger.info(f"   Reason: {signal.reason}")
+
+        market = signal.metadata.get("market") if hasattr(signal, 'metadata') else None
+        if not market:
+            logger.warning("No market found for player prop signal")
+            return
+
+        # Check if can open position
+        positions = self.trader.get_active_positions()
+        balance = self.trader.get_balance() if hasattr(self.trader, 'get_balance') else 100.0
+
+        # Create a fake TradingSignal for risk manager compatibility
+        fake_signal = TradingSignal(
+            game_id=signal.game_id,
+            team=signal.player_name,
+            direction=SignalDirection.BUY if signal.side == 'over' else SignalDirection.SELL,
+            confidence=signal.confidence,
+            reason=signal.reason,
+            strategy=f"PlayerProp_{signal.stat_type}",
+            metadata={}
+        )
+
+        can_open, reason = self.risk_manager.can_open_position(fake_signal, positions, balance)
+
+        if not can_open:
+            logger.warning(f"Cannot open position: {reason}")
+            return
+
+        # Calculate position size
+        position_size = self.risk_manager.calculate_position_size(fake_signal, balance)
+
+        # Get token ID for the prop side
+        token_id = self.market_matcher.get_token_id_for_prop_outcome(market, signal.side)
+
+        if not token_id:
+            logger.warning(f"Could not find token ID for {signal.side}")
+            return
+
+        # Get current price
+        price = None
+        for outcome in market.get("outcomes", []):
+            if outcome.get("token_id") == token_id:
+                price = outcome.get("price", 0.5)
+                break
+
+        if price is None:
+            logger.warning("Could not get market price")
+            return
+
+        # Determine side (BUY for over, BUY for under means buying 'under' outcome)
+        side = "BUY"  # Always buy the outcome we chose
+
+        # Place order
+        logger.info(f"📤 Placing order: {side} ${position_size:.2f} on {signal.player_name} {signal.stat_type} {signal.side.upper()} @ {price:.3f}")
+
+        if self.paper_mode:
+            position = self.trader.place_order(
+                token_id=token_id,
+                side=side,
+                price=price,
+                size=position_size,
+                game_id=signal.game_id,
+                team=f"{signal.player_name} {signal.stat_type} {signal.side}"
+            )
+        else:
+            position = self.trader.place_market_order(
+                token_id=token_id,
+                side=side,
+                size=position_size,
+                game_id=signal.game_id,
+                team=f"{signal.player_name} {signal.stat_type} {signal.side}"
+            )
+
+        if position:
+            logger.info(f"✅ Player prop position opened successfully")
+        else:
+            logger.error(f"❌ Failed to open player prop position")
+
+    def _parse_minutes(self, minutes_str: str) -> float:
+        """Parse ISO 8601 duration to minutes"""
+        if not minutes_str or not isinstance(minutes_str, str):
+            return 0.0
+
+        try:
+            import re
+            match = re.search(r'PT(\d+)M(\d+(?:\.\d+)?)S', minutes_str)
+            if match:
+                mins = int(match.group(1))
+                secs = float(match.group(2))
+                return mins + secs / 60.0
+        except:
+            pass
+
+        return 0.0
 
     def _display_status(self):
         """Display current bot status"""
