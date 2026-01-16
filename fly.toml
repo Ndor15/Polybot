@@ -1,0 +1,13 @@
+# Fly.io configuration for NBA Polymarket bot
+app = "nba-polybot"
+
+[build]
+
+[processes]
+app = "python bot_v2.py"
+
+# No HTTP service - this is a background worker
+# Comment out or remove the [[services]] section entirely
+
+[env]
+  # Add any environment variables here if needed
