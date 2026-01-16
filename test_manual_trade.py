@@ -109,9 +109,22 @@ def place_test_trade(trader, market):
     if isinstance(outcomes, list) and len(outcomes) > 0:
         # Check if outcomes are strings like ["Yes", "No"]
         if isinstance(outcomes[0], str):
-            # Get token IDs from market level
-            yes_token = market.get("clobTokenIds", [None, None])[0]
-            no_token = market.get("clobTokenIds", [None, None])[1]
+            # Get token IDs from market level (may be JSON string)
+            clob_token_ids = market.get("clobTokenIds", [])
+
+            # Parse if it's a JSON string
+            if isinstance(clob_token_ids, str):
+                try:
+                    clob_token_ids = json.loads(clob_token_ids)
+                except:
+                    clob_token_ids = []
+
+            # Ensure we have at least 2 tokens
+            if len(clob_token_ids) < 2:
+                clob_token_ids = [None, None]
+
+            yes_token = clob_token_ids[0]
+            no_token = clob_token_ids[1]
 
             for i, outcome_name in enumerate(outcomes):
                 token = yes_token if i == 0 else no_token
