@@ -28,8 +28,7 @@ def search_markets(query):
         url = f"{config.POLYMARKET_GAMMA_API}/markets"
         params = {
             "limit": 500,  # Get more markets
-            "active": "true",
-            "closed": "false"  # Only open markets
+            "active": "true"
         }
 
         response = requests.get(url, params=params)
@@ -39,7 +38,7 @@ def search_markets(query):
         # Find markets mentioning the query and filter by date
         matching_markets = []
         query_lower = query.lower()
-        current_year = datetime.now().year
+        now = datetime.now(datetime.now().astimezone().tzinfo)
 
         for market in markets:
             question = market.get("question", "").lower()
@@ -48,14 +47,15 @@ def search_markets(query):
             if query_lower not in question:
                 continue
 
-            # Filter out very old markets (before current year)
+            # Filter out closed/expired markets
             end_date = market.get("endDate", "")
             if end_date:
                 try:
                     # Parse ISO date
                     end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    if end_dt.year < current_year:
-                        continue  # Skip old markets
+                    # Skip if already ended (before now)
+                    if end_dt < now:
+                        continue
                 except:
                     pass  # If parsing fails, include the market
 
@@ -80,16 +80,15 @@ def list_popular_markets():
         url = f"{config.POLYMARKET_GAMMA_API}/markets"
         params = {
             "limit": 100,  # Get more to filter
-            "active": "true",
-            "closed": "false"
+            "active": "true"
         }
 
         response = requests.get(url, params=params)
         response.raise_for_status()
         all_markets = response.json()
 
-        # Filter out old markets
-        current_year = datetime.now().year
+        # Filter out expired markets
+        now = datetime.now(datetime.now().astimezone().tzinfo)
         markets = []
 
         for market in all_markets:
@@ -97,8 +96,9 @@ def list_popular_markets():
             if end_date:
                 try:
                     end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    if end_dt.year < current_year:
-                        continue  # Skip old markets
+                    # Skip if already ended
+                    if end_dt < now:
+                        continue
                 except:
                     pass  # If parsing fails, include the market
 
