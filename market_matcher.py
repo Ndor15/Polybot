@@ -237,10 +237,25 @@ class MarketMatcher:
 
             normalized_outcomes.append((o_name, o_token))
 
-        # Strategy 1: match team name inside outcome name
+        # Debug logging
+        logger.info(f"DEBUG: Looking for team '{team_name}' (normalized: '{team_norm}')")
+        logger.info(f"DEBUG: Market outcomes: {[o[0] for o in normalized_outcomes]}")
+
+        # Strategy 1: match full team name inside outcome name
         for o_name, _ in normalized_outcomes:
             if team_norm in o_name.lower():
+                logger.info(f"DEBUG: Matched '{team_norm}' in outcome '{o_name}'")
                 return o_name if bet_on_team else self._get_opposite_outcome(normalized_outcomes, o_name)
+
+        # Strategy 1.5: Try matching just team nickname or city name
+        # e.g., "San Antonio Spurs" → try "spurs" or "san antonio"
+        team_parts = team_name.lower().split()
+        for part in team_parts:
+            if len(part) > 3:  # Skip short words like "LA"
+                for o_name, _ in normalized_outcomes:
+                    if part in o_name.lower():
+                        logger.info(f"DEBUG: Matched part '{part}' in outcome '{o_name}'")
+                        return o_name if bet_on_team else self._get_opposite_outcome(normalized_outcomes, o_name)
 
         # Strategy 2: Yes/No markets
         outcome_names = [o[0] for o in normalized_outcomes]
