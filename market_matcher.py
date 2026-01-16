@@ -210,14 +210,10 @@ class MarketMatcher:
         bet_on_team: bool = True
     ) -> Optional[str]:
         """
-        Find the outcome name to bet on for a specific team
-
-        Args:
-            market: Market dict
-            team_name: Team to bet on
-            bet_on_team: True to bet ON the team, False to bet AGAINST
-
-        Returns: Outcome name (e.g., "Yes", "No", or team name)
+        New version compatible with Polymarket CLOB formats:
+        - outcomes can be list of dicts
+        - or list of strings ("Yes","No")
+        - or missing names
         """
         outcomes = market.get("outcomes", [])
 
@@ -225,43 +221,57 @@ class MarketMatcher:
             return None
 
         # Normalize team name
-        team_norm = self.normalizer.normalize(team_name)
+        team_norm = self.normalizer.normalize(team_name).lower()
 
-        # Strategy 1: Look for team name in outcomes
+        # Convert outcomes into (name, token_id) list
+        normalized_outcomes = []
         for outcome in outcomes:
-            outcome_name = outcome.get("name", "")
+            if isinstance(outcome, dict):
+                o_name = outcome.get("name") or outcome.get("label") or ""
+                o_token = outcome.get("token_id") or outcome.get("tokenId")
+            else:
+                # outcome is a string
+                o_name = str(outcome)
+                # tokenId stored at market level
+                o_token = None
 
-            if self._team_in_text(team_norm, outcome_name.lower()):
-                return outcome_name if bet_on_team else self._get_opposite_outcome(outcomes, outcome_name)
+            normalized_outcomes.append((o_name, o_token))
 
-        # Strategy 2: Use Yes/No for binary markets
-        if len(outcomes) == 2:
-            outcome_names = [o.get("name", "") for o in outcomes]
+        # Strategy 1: match team name inside outcome name
+        for o_name, _ in normalized_outcomes:
+            if team_norm in o_name.lower():
+                return o_name if bet_on_team else self._get_opposite_outcome(normalized_outcomes, o_name)
 
-            if "Yes" in outcome_names and "No" in outcome_names:
-                # Check which one corresponds to the team
-                question = market.get("question", "").lower()
+        # Strategy 2: Yes/No markets
+        outcome_names = [o[0] for o in normalized_outcomes]
 
-                # If question is like "Will Lakers win?", Yes = Lakers wins
-                if team_norm.lower() in question:
-                    return "Yes" if bet_on_team else "No"
+        if len(outcome_names) == 2 and {"Yes", "No"} <= set([n.capitalize() for n in outcome_names]):
+            question = market.get("question", "").lower()
 
-        # Default: return first outcome
-        if outcomes:
-            first_outcome = outcomes[0].get("name", "")
-            return first_outcome if bet_on_team else self._get_opposite_outcome(outcomes, first_outcome)
+            # If question mentions the team → Yes = team wins
+            if team_norm in question:
+                return "Yes" if bet_on_team else "No"
+
+            # Otherwise default: Yes = home team
+            return "Yes" if bet_on_team else "No"
+
+        # Strategy 3: fallback → first outcome
+        if normalized_outcomes:
+            first_name = normalized_outcomes[0][0]
+            return first_name if bet_on_team else self._get_opposite_outcome(normalized_outcomes, first_name)
 
         return None
 
-    def _get_opposite_outcome(self, outcomes: List[Dict], outcome_name: str) -> Optional[str]:
-        """Get the opposite outcome in a binary market"""
+    def _get_opposite_outcome(self, outcomes: List[tuple], outcome_name: str) -> Optional[str]:
+        """
+        outcomes is list of (name, tokenId)
+        """
         if len(outcomes) != 2:
             return None
 
-        for outcome in outcomes:
-            name = outcome.get("name", "")
-            if name != outcome_name:
-                return name
+        for o_name, _ in outcomes:
+            if o_name != outcome_name:
+                return o_name
 
         return None
 
@@ -272,25 +282,49 @@ class MarketMatcher:
         bet_on_team: bool = True
     ) -> Optional[str]:
         """
-        Get the token ID to trade for a specific team
-
-        Args:
-            market: Market dict
-            team_name: Team to bet on
-            bet_on_team: True to bet ON the team, False to bet AGAINST
-
-        Returns: Token ID
+        New version compatible with Polymarket CLOB 2025/2026.
+        Handles:
+        - market["outcomes"] list of dicts
+        - list of strings
+        - yesTokenId / noTokenId
+        - tokenId in outcome dicts
         """
         outcome_name = self.find_outcome_for_team(market, team_name, bet_on_team)
 
         if not outcome_name:
             return None
 
-        # Find token ID
+        # 1. Try inside outcomes array
         outcomes = market.get("outcomes", [])
         for outcome in outcomes:
-            if outcome.get("name") == outcome_name:
-                return outcome.get("token_id")
+            if isinstance(outcome, dict):
+                if outcome.get("name") == outcome_name or outcome.get("label") == outcome_name:
+                    return outcome.get("token_id") or outcome.get("tokenId")
+
+        # 2. Try Yes/No fields (modern Polymarket format)
+        lower = outcome_name.lower()
+
+        if lower == "yes":
+            return (
+                market.get("yesTokenId")
+                or market.get("token_id_yes")
+                or market.get("yes_token_id")
+                or market.get("yesId")
+            )
+
+        if lower == "no":
+            return (
+                market.get("noTokenId")
+                or market.get("token_id_no")
+                or market.get("no_token_id")
+                or market.get("noId")
+            )
+
+        # 3. Fallback: return first available token
+        # Sometimes they store tokens at top-level under "tokens"
+        if "tokens" in market:
+            if isinstance(market["tokens"], list) and len(market["tokens"]) >= 1:
+                return market["tokens"][0].get("token_id")
 
         return None
 
