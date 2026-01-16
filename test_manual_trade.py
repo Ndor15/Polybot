@@ -41,7 +41,6 @@ def search_markets(query):
         matching_markets = []
         query_lower = query.lower()
         now = datetime.now(datetime.now().astimezone().tzinfo)
-        current_year = now.year
 
         filtered_count = 0
         query_matched = 0
@@ -56,17 +55,6 @@ def search_markets(query):
 
             query_matched += 1
 
-            # Skip markets mentioning old years
-            skip_market = False
-            for old_year in range(2015, current_year):
-                if str(old_year) in question:
-                    filtered_count += 1
-                    skip_market = True
-                    break
-
-            if skip_market:
-                continue
-
             # Filter out closed/expired markets
             end_date = market.get("endDate", "")
 
@@ -78,7 +66,7 @@ def search_markets(query):
             try:
                 # Parse ISO date
                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                # Skip if already ended (before now)
+                # Skip if already ended (must be in future)
                 if end_dt < now:
                     filtered_count += 1
                     continue
@@ -118,35 +106,22 @@ def list_popular_markets():
 
         # Filter out expired/old markets
         now = datetime.now(datetime.now().astimezone().tzinfo)
-        current_year = now.year
         markets = []
 
         for market in all_markets:
-            question = market.get("question", "")
-
-            # Skip markets mentioning old years (2020, 2021, etc.)
-            skip_market = False
-            for old_year in range(2015, current_year):
-                if str(old_year) in question:
-                    skip_market = True
-                    break
-
-            if skip_market:
-                continue
-
             end_date = market.get("endDate", "")
 
-            # Skip if no valid end date
+            # Must have valid end date
             if not end_date or end_date == "":
                 continue
 
             try:
                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                # Skip if already ended
+                # Skip if already ended (must be in future)
                 if end_dt < now:
                     continue
             except:
-                # If parsing fails, skip it (invalid date)
+                # If parsing fails, skip it
                 continue
 
             markets.append(market)
