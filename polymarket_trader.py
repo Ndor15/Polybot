@@ -242,16 +242,22 @@ class PolymarketTrader:
                 side=side_constant
             )
 
-            # Place order
-            response = self.client.create_order(order_args)
-
-            if not response:
-                logger.error("Order placement failed - no response")
+            # Sign the order (returns SignedOrder object)
+            signed_order = self.client.create_order(order_args)
+            if not signed_order:
+                logger.error("Order signing failed - no signed order")
                 return None
 
-            order_id = response.get("orderID")
+            # Post the signed order to the exchange (returns response dict)
+            response = self.client.post_order(signed_order, OrderType.GTC)
+            if not response:
+                logger.error("Order posting failed - no response")
+                return None
+
+            # Extract order ID from response
+            order_id = response.get("orderID") if isinstance(response, dict) else None
             if not order_id:
-                logger.error("Order placement failed - no order ID")
+                logger.error(f"Order posting failed - no order ID in response: {response}")
                 return None
 
             # Create position
