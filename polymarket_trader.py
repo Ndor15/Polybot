@@ -181,13 +181,20 @@ class PolymarketTrader:
     def get_current_price(self, token_id: str) -> Optional[float]:
         """Get current market price for a token"""
         try:
-            # Get order book
+            # Get order book using py-clob-client
             book = self.client.get_order_book(token_id)
 
-            # Get best bid/ask
-            if book and "bids" in book and len(book["bids"]) > 0:
-                best_bid = float(book["bids"][0]["price"])
-                return best_bid
+            # Access bids using attribute access (book.bids) or dict access (book['bids'])
+            if book:
+                # Try attribute-style access first
+                try:
+                    bids = book.bids if hasattr(book, 'bids') else book.get('bids', [])
+                    if bids and len(bids) > 0:
+                        # bids[0] is an OrderSummary with price as string
+                        best_bid = float(bids[0].price if hasattr(bids[0], 'price') else bids[0]['price'])
+                        return best_bid
+                except (AttributeError, KeyError, IndexError, TypeError):
+                    pass
 
             return None
         except Exception as e:
