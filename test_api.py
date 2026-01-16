@@ -1,43 +1,38 @@
 import requests
 from datetime import datetime, timezone
 
-# Test different API endpoints
-print("Testing Polymarket API...")
+# Test /events endpoint (correct one according to docs)
+print("Testing Polymarket /events API...")
 
-# Try without 'active' filter
-url = "https://gamma-api.polymarket.com/markets"
-params = {"limit": 10}
+url = "https://gamma-api.polymarket.com/events"
+params = {
+    "active": "true",
+    "closed": "false",
+    "limit": 10
+}
 
 response = requests.get(url, params=params)
 print(f"\nStatus: {response.status_code}")
 
 if response.status_code == 200:
-    markets = response.json()
-    print(f"Returned {len(markets)} markets\n")
+    events = response.json()
+    print(f"Returned {len(events)} events\n")
 
-    now = datetime.now(timezone.utc)
+    for i, event in enumerate(events[:5], 1):
+        title = event.get("title", "N/A")[:60]
+        active = event.get("active", "N/A")
+        closed = event.get("closed", "N/A")
+        markets = event.get("markets", [])
 
-    for i, market in enumerate(markets[:5], 1):
-        question = market.get("question", "N/A")[:60]
-        end_date = market.get("endDate", "N/A")
-        closed = market.get("closed", "N/A")
-        active = market.get("active", "N/A")
+        print(f"{i}. Event: {title}")
+        print(f"   active: {active}, closed: {closed}")
+        print(f"   {len(markets)} market(s):")
 
-        # Try to parse end date
-        if end_date and end_date != "N/A":
-            try:
-                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                is_future = end_dt > now
-                print(f"{i}. {question}")
-                print(f"   endDate: {end_date} (future: {is_future})")
-                print(f"   closed: {closed}, active: {active}\n")
-            except:
-                print(f"{i}. {question}")
-                print(f"   endDate: {end_date} (parse failed)")
-                print(f"   closed: {closed}, active: {active}\n")
-        else:
-            print(f"{i}. {question}")
-            print(f"   NO ENDDATE")
-            print(f"   closed: {closed}, active: {active}\n")
+        for m in markets[:2]:  # Show first 2 markets
+            question = m.get("question", "N/A")[:60]
+            tokens = m.get("clobTokenIds", "N/A")
+            print(f"      - {question}")
+            print(f"        tokens: {tokens}")
+        print()
 else:
     print(f"Error: {response.text}")
