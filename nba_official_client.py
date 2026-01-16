@@ -60,7 +60,7 @@ class NBAOfficialClient:
 
         # Cache to avoid hammering API
         self.cache = {}
-        self.cache_duration = 10  # Cache for 10 seconds (balance between freshness and VPN latency)
+        self.cache_duration = 30  # Cache for 30 seconds (VPN is slow, but Polymarket needs VPN)
 
         # Track games for momentum tracking
         self.games_tracker: Dict[str, NBAGame] = {}
