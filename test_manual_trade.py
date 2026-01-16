@@ -23,24 +23,43 @@ def search_markets(query):
 
     try:
         import requests
+        from datetime import datetime
+
         url = f"{config.POLYMARKET_GAMMA_API}/markets"
         params = {
             "limit": 500,  # Get more markets
-            "active": "true"
+            "active": "true",
+            "closed": "false"  # Only open markets
         }
 
         response = requests.get(url, params=params)
         response.raise_for_status()
         markets = response.json()
 
-        # Find markets mentioning the query
+        # Find markets mentioning the query and filter by date
         matching_markets = []
         query_lower = query.lower()
+        current_year = datetime.now().year
 
         for market in markets:
             question = market.get("question", "").lower()
-            if query_lower in question:
-                matching_markets.append(market)
+
+            # Match query
+            if query_lower not in question:
+                continue
+
+            # Filter out very old markets (before current year)
+            end_date = market.get("endDate", "")
+            if end_date:
+                try:
+                    # Parse ISO date
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                    if end_dt.year < current_year:
+                        continue  # Skip old markets
+                except:
+                    pass  # If parsing fails, include the market
+
+            matching_markets.append(market)
 
         logger.info(f"  Found {len(matching_markets)} markets")
         return matching_markets
@@ -56,20 +75,49 @@ def list_popular_markets():
 
     try:
         import requests
+        from datetime import datetime
+
         url = f"{config.POLYMARKET_GAMMA_API}/markets"
         params = {
-            "limit": 20,
-            "active": "true"
+            "limit": 100,  # Get more to filter
+            "active": "true",
+            "closed": "false"
         }
 
         response = requests.get(url, params=params)
         response.raise_for_status()
-        markets = response.json()
+        all_markets = response.json()
 
-        logger.info(f"\n📊 Top 20 Active Markets:")
+        # Filter out old markets
+        current_year = datetime.now().year
+        markets = []
+
+        for market in all_markets:
+            end_date = market.get("endDate", "")
+            if end_date:
+                try:
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                    if end_dt.year < current_year:
+                        continue  # Skip old markets
+                except:
+                    pass  # If parsing fails, include the market
+
+            markets.append(market)
+
+            if len(markets) >= 20:
+                break  # Got enough markets
+
+        logger.info(f"\n📊 Top {len(markets)} Active Markets:")
         for i, market in enumerate(markets, 1):
             question = market.get("question", "N/A")
-            logger.info(f"  {i}. {question[:80]}...")
+            end_date = market.get("endDate", "")
+            try:
+                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                date_str = dt.strftime("%Y-%m-%d")
+            except:
+                date_str = "N/A"
+
+            logger.info(f"  {i}. {question[:70]}... (ends: {date_str})")
 
         return markets
 
@@ -263,8 +311,16 @@ def main():
                     markets = search_markets(query)
                     if markets:
                         logger.info(f"\n📊 Found {len(markets)} markets:")
+                        from datetime import datetime
                         for i, m in enumerate(markets[:20], 1):  # Show max 20
-                            logger.info(f"  {i}. {m.get('question', 'N/A')}")
+                            question = m.get('question', 'N/A')
+                            end_date = m.get("endDate", "")
+                            try:
+                                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                                date_str = dt.strftime("%Y-%m-%d")
+                            except:
+                                date_str = "N/A"
+                            logger.info(f"  {i}. {question[:70]}... (ends: {date_str})")
                     else:
                         logger.warning(f"No markets found for '{query}'")
                 else:
