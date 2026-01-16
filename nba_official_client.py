@@ -60,7 +60,7 @@ class NBAOfficialClient:
 
         # Cache to avoid hammering API
         self.cache = {}
-        self.cache_duration = 60  # Cache for 60 seconds (reduces API calls, especially via VPN)
+        self.cache_duration = 10  # Cache for 10 seconds (balance between freshness and VPN latency)
 
         # Track games for momentum tracking
         self.games_tracker: Dict[str, NBAGame] = {}
