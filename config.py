@@ -32,6 +32,9 @@ class Config:
     MAX_CONCURRENT_TRADES: int = int(os.getenv("MAX_CONCURRENT_TRADES", "3"))
     SLIPPAGE_TOLERANCE: float = float(os.getenv("SLIPPAGE_TOLERANCE", "0.02"))
 
+    # Test Mode - Force one $1 trade then stop
+    TEST_TRADE_MODE: bool = os.getenv("TEST_TRADE_MODE", "false").lower() == "true"
+
     # Risk Management
     STOP_LOSS_PERCENTAGE: float = float(os.getenv("STOP_LOSS_PERCENTAGE", "2.5"))
     TAKE_PROFIT_PERCENTAGE: float = float(os.getenv("TAKE_PROFIT_PERCENTAGE", "3.0"))
@@ -69,6 +72,8 @@ class Config:
     def display(cls):
         """Display current configuration (hiding sensitive data)"""
         print("\n=== Bot Configuration ===")
+        if cls.TEST_TRADE_MODE:
+            print("🧪 TEST TRADE MODE ACTIVE - Will place ONE $1 trade then stop")
         print(f"Chain ID: {cls.CHAIN_ID}")
         print(f"Trade Size: ${cls.TRADE_SIZE_USDC} USDC")
         print(f"Max Concurrent Trades: {cls.MAX_CONCURRENT_TRADES}")

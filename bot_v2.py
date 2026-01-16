@@ -112,6 +112,9 @@ class NBAPolymarketBotV2:
         self.running = False
         self.iteration = 0
 
+        # Test trade mode flag
+        self.test_trade_completed = False
+
         # Markets cache
         self.markets_cache = []
         self.last_market_fetch = 0
@@ -393,6 +396,11 @@ class NBAPolymarketBotV2:
         # Calculate position size
         position_size = self.risk_manager.calculate_position_size(signal, balance)
 
+        # Override for test mode
+        if config.TEST_TRADE_MODE:
+            position_size = 1.0
+            logger.info("🧪 TEST MODE: Forcing position size to $1.00")
+
         # Determine which outcome to bet on
         bet_on_team = "BUY" in signal.direction.value
         token_id = self.market_matcher.get_token_id_for_team(market, signal.team, bet_on_team)
@@ -438,6 +446,14 @@ class NBAPolymarketBotV2:
 
         if position:
             logger.info(f"✅ Position opened successfully")
+
+            # Stop bot after test trade
+            if config.TEST_TRADE_MODE and not self.test_trade_completed:
+                self.test_trade_completed = True
+                logger.info("🧪 TEST TRADE COMPLETED! Stopping bot...")
+                logger.info(f"📊 Test trade: {side} ${position_size:.2f} on {signal.team}")
+                self.running = False
+
         else:
             logger.error(f"❌ Failed to open position")
 
