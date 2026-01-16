@@ -41,31 +41,51 @@ def search_markets(query):
         matching_markets = []
         query_lower = query.lower()
         now = datetime.now(datetime.now().astimezone().tzinfo)
+        current_year = now.year
 
         filtered_count = 0
         query_matched = 0
 
         for market in markets:
-            question = market.get("question", "").lower()
+            question = market.get("question", "")
+            question_lower = question.lower()
 
             # Match query
-            if query_lower not in question:
+            if query_lower not in question_lower:
                 continue
 
             query_matched += 1
 
+            # Skip markets mentioning old years
+            skip_market = False
+            for old_year in range(2015, current_year):
+                if str(old_year) in question:
+                    filtered_count += 1
+                    skip_market = True
+                    break
+
+            if skip_market:
+                continue
+
             # Filter out closed/expired markets
             end_date = market.get("endDate", "")
-            if end_date:
-                try:
-                    # Parse ISO date
-                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    # Skip if already ended (before now)
-                    if end_dt < now:
-                        filtered_count += 1
-                        continue
-                except:
-                    pass  # If parsing fails, include the market
+
+            # Skip if no valid end date
+            if not end_date or end_date == "":
+                filtered_count += 1
+                continue
+
+            try:
+                # Parse ISO date
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                # Skip if already ended (before now)
+                if end_dt < now:
+                    filtered_count += 1
+                    continue
+            except:
+                # If parsing fails, skip it
+                filtered_count += 1
+                continue
 
             matching_markets.append(market)
 
@@ -88,7 +108,7 @@ def list_popular_markets():
 
         url = f"{config.POLYMARKET_GAMMA_API}/markets"
         params = {
-            "limit": 100,  # Get more to filter
+            "limit": 500,  # Get more to filter (many are old)
             "active": "true"
         }
 
@@ -96,20 +116,38 @@ def list_popular_markets():
         response.raise_for_status()
         all_markets = response.json()
 
-        # Filter out expired markets
+        # Filter out expired/old markets
         now = datetime.now(datetime.now().astimezone().tzinfo)
+        current_year = now.year
         markets = []
 
         for market in all_markets:
+            question = market.get("question", "")
+
+            # Skip markets mentioning old years (2020, 2021, etc.)
+            skip_market = False
+            for old_year in range(2015, current_year):
+                if str(old_year) in question:
+                    skip_market = True
+                    break
+
+            if skip_market:
+                continue
+
             end_date = market.get("endDate", "")
-            if end_date:
-                try:
-                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    # Skip if already ended
-                    if end_dt < now:
-                        continue
-                except:
-                    pass  # If parsing fails, include the market
+
+            # Skip if no valid end date
+            if not end_date or end_date == "":
+                continue
+
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                # Skip if already ended
+                if end_dt < now:
+                    continue
+            except:
+                # If parsing fails, skip it (invalid date)
+                continue
 
             markets.append(market)
 
