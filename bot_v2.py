@@ -276,8 +276,8 @@ class NBAPolymarketBotV2:
                 logger.info(f"Game signals after confidence filter (>0.30): {len(high_conf_signals)}")
 
                 # Filter player prop signals
-                high_conf_prop_signals = [s for s in all_player_prop_signals if s.confidence >= 0.65]
-                logger.info(f"Player prop signals after confidence filter (>0.65): {len(high_conf_prop_signals)}")
+                high_conf_prop_signals = [s for s in all_player_prop_signals if s.confidence >= 0.20]
+                logger.info(f"Player prop signals after confidence filter (>0.20): {len(high_conf_prop_signals)}")
 
                 # Execute best signal (prioritize higher confidence)
                 best_game_signal = self.signal_analyzer.get_best_signal(high_conf_signals) if high_conf_signals else None
