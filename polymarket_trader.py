@@ -14,6 +14,7 @@ from config import config
 try:
     from py_clob_client.client import ClobClient
     from py_clob_client.clob_types import OrderArgs, OrderType
+    from py_clob_client.order_builder.constants import BUY, SELL
     CLOB_AVAILABLE = True
 except ImportError:
     CLOB_AVAILABLE = False
@@ -232,13 +233,13 @@ class PolymarketTrader:
                 logger.error(f"Insufficient balance: ${balance:.2f} < ${size:.2f}")
                 return None
 
-            # Create order
+            # Create order - convert side string to constant
+            side_constant = BUY if side.upper() == "BUY" else SELL
             order_args = OrderArgs(
                 token_id=token_id,
                 price=price,
                 size=size,
-                side=side.upper(),
-                order_type=OrderType.GTC  # Good Till Canceled
+                side=side_constant
             )
 
             # Place order
