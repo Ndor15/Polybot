@@ -17,16 +17,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def find_iran_israel_market(trader):
-    """Find the Israel/Iran strike market"""
-    logger.info("🔍 Searching for Israel/Iran markets...")
+def search_markets(query):
+    """Search for markets matching a query"""
+    logger.info(f"🔍 Searching for markets containing '{query}'...")
 
     try:
-        # Search for markets containing "Israel" and "Iran"
         import requests
         url = f"{config.POLYMARKET_GAMMA_API}/markets"
         params = {
-            "limit": 100,
+            "limit": 500,  # Get more markets
             "active": "true"
         }
 
@@ -34,24 +33,49 @@ def find_iran_israel_market(trader):
         response.raise_for_status()
         markets = response.json()
 
-        # Find markets mentioning Israel and Iran
+        # Find markets mentioning the query
         matching_markets = []
+        query_lower = query.lower()
+
         for market in markets:
             question = market.get("question", "").lower()
-            if "israel" in question and "iran" in question:
+            if query_lower in question:
                 matching_markets.append(market)
-                logger.info(f"  - Found: {market.get('question', 'N/A')}")
 
-        if not matching_markets:
-            logger.warning("No Israel/Iran markets found")
-            return None
-
-        # Return first match
-        return matching_markets[0]
+        logger.info(f"  Found {len(matching_markets)} markets")
+        return matching_markets
 
     except Exception as e:
         logger.error(f"Error fetching markets: {e}")
-        return None
+        return []
+
+
+def list_popular_markets():
+    """List some popular markets for user to choose"""
+    logger.info("🔍 Fetching popular markets...")
+
+    try:
+        import requests
+        url = f"{config.POLYMARKET_GAMMA_API}/markets"
+        params = {
+            "limit": 20,
+            "active": "true"
+        }
+
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        markets = response.json()
+
+        logger.info(f"\n📊 Top 20 Active Markets:")
+        for i, market in enumerate(markets, 1):
+            question = market.get("question", "N/A")
+            logger.info(f"  {i}. {question[:80]}...")
+
+        return markets
+
+    except Exception as e:
+        logger.error(f"Error fetching markets: {e}")
+        return []
 
 
 def place_test_trade(trader, market):
@@ -158,14 +182,67 @@ def main():
         traceback.print_exc()
         return
 
-    # Find the market
-    market = find_iran_israel_market(trader)
-    if not market:
-        logger.error("\nCould not find Israel/Iran market")
-        logger.info("\n💡 You can modify the search in find_iran_israel_market() function")
+    # Interactive market selection
+    selected_market = None
+    markets = []
+
+    logger.info("\n" + "=" * 60)
+    logger.info("📋 Market Selection")
+    logger.info("=" * 60)
+    logger.info("Commands:")
+    logger.info("  's <keyword>' - Search markets (e.g., 's israel')")
+    logger.info("  'l' - List top 20 popular markets")
+    logger.info("  '<number>' - Select market by number")
+    logger.info("  'q' - Quit")
+    logger.info("=" * 60)
+
+    while not selected_market:
+        try:
+            user_input = input("\n> ").strip()
+
+            if user_input.lower() == 'q':
+                logger.info("Exiting...")
+                return
+
+            elif user_input.lower() == 'l':
+                markets = list_popular_markets()
+                if not markets:
+                    logger.warning("No markets found")
+
+            elif user_input.lower().startswith('s '):
+                query = user_input[2:].strip()
+                if query:
+                    markets = search_markets(query)
+                    if markets:
+                        logger.info(f"\n📊 Found {len(markets)} markets:")
+                        for i, m in enumerate(markets[:20], 1):  # Show max 20
+                            logger.info(f"  {i}. {m.get('question', 'N/A')}")
+                    else:
+                        logger.warning(f"No markets found for '{query}'")
+                else:
+                    logger.warning("Please provide a search query (e.g., 's israel')")
+
+            elif user_input.isdigit():
+                idx = int(user_input) - 1
+                if 0 <= idx < len(markets):
+                    selected_market = markets[idx]
+                    logger.info(f"\n✅ Selected: {selected_market.get('question', 'N/A')}")
+                else:
+                    logger.warning(f"Invalid number. Choose 1-{len(markets)}")
+            else:
+                logger.info("Commands: 's <keyword>' to search, 'l' to list, '<number>' to select, 'q' to quit")
+
+        except KeyboardInterrupt:
+            logger.info("\n\nExiting...")
+            return
+        except Exception as e:
+            logger.error(f"Error: {e}")
+
+    if not selected_market:
+        logger.error("No market selected")
         return
 
-    # Wait for user input
+    # Confirm and place trade
     logger.info("\n" + "=" * 60)
     logger.info("Press 'p' then Enter to place $1 test trade")
     logger.info("Press 'q' then Enter to quit")
@@ -177,7 +254,7 @@ def main():
 
             if user_input == 'p':
                 logger.info("\n🚀 Placing test trade...")
-                success = place_test_trade(trader, market)
+                success = place_test_trade(trader, selected_market)
 
                 if success:
                     logger.info("\n✅ Test trade completed successfully!")
