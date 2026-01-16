@@ -60,7 +60,7 @@ class NBAOfficialClient:
 
         # Cache to avoid hammering API
         self.cache = {}
-        self.cache_duration = 5  # Cache for 5 seconds
+        self.cache_duration = 60  # Cache for 60 seconds (reduces API calls, especially via VPN)
 
         # Track games for momentum tracking
         self.games_tracker: Dict[str, NBAGame] = {}
@@ -95,7 +95,7 @@ class NBAOfficialClient:
 
             for attempt in range(max_retries):
                 try:
-                    response = self.session.get(url, params=params, timeout=30)  # Increased timeout to 30s
+                    response = self.session.get(url, params=params, timeout=60)  # Increased timeout to 60s (VPN can be very slow)
                     response.raise_for_status()
                     data = response.json()
                     break  # Success, exit retry loop
@@ -225,7 +225,7 @@ class NBAOfficialClient:
 
             for attempt in range(max_retries):
                 try:
-                    response = self.session.get(url, params=params, timeout=30)  # Increased timeout
+                    response = self.session.get(url, params=params, timeout=60)  # Increased timeout to 60s
                     response.raise_for_status()
                     data = response.json()
                     break
