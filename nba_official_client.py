@@ -120,6 +120,8 @@ class NBAOfficialClient:
             scoreboard = data.get('scoreboard', {})
             game_header = scoreboard.get('games', [])
 
+            logger.info(f"DEBUG: API returned {len(game_header)} total games")
+
             for game_data in game_header:
                 game_id = game_data.get('gameId', '')
 
@@ -134,8 +136,14 @@ class NBAOfficialClient:
 
                 # Get game status
                 game_status = game_data.get('gameStatus', 1)
+                game_status_text = game_data.get('gameStatusText', '')
                 period = game_data.get('period', 0)
                 game_time = game_data.get('gameClock', '')
+
+                home_team_full = f"{home_team.get('teamCity', '')} {home_name}".strip()
+                away_team_full = f"{away_team.get('teamCity', '')} {away_name}".strip()
+
+                logger.info(f"DEBUG: {away_team_full} @ {home_team_full} | Status: {game_status} ({game_status_text}) | Period: {period} | Score: {away_score}-{home_score}")
 
                 # Status: 1=scheduled, 2=live, 3=final
                 if game_status == 2:  # Live game
