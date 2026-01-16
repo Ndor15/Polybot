@@ -105,29 +105,42 @@ def list_popular_markets():
         all_markets = response.json()
 
         # Filter out expired/old markets
-        now = datetime.now(datetime.now().astimezone().tzinfo)
+        from datetime import timezone as tz
+        now = datetime.now(tz.utc)
         markets = []
+
+        no_end_date = 0
+        parse_failed = 0
+        already_ended = 0
+        valid_markets = 0
 
         for market in all_markets:
             end_date = market.get("endDate", "")
 
             # Must have valid end date
             if not end_date or end_date == "":
+                no_end_date += 1
                 continue
 
             try:
                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                 # Skip if already ended (must be in future)
                 if end_dt < now:
+                    already_ended += 1
                     continue
-            except:
+                else:
+                    valid_markets += 1
+            except Exception as e:
                 # If parsing fails, skip it
+                parse_failed += 1
                 continue
 
             markets.append(market)
 
             if len(markets) >= 20:
                 break  # Got enough markets
+
+        logger.info(f"DEBUG: no_end_date={no_end_date}, parse_failed={parse_failed}, already_ended={already_ended}, valid={valid_markets}")
 
         logger.info(f"\n📊 Top {len(markets)} Active Markets:")
         for i, market in enumerate(markets, 1):
