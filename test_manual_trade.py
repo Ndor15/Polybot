@@ -25,60 +25,42 @@ def search_markets(query):
         import requests
         from datetime import datetime
 
-        url = f"{config.POLYMARKET_GAMMA_API}/markets"
+        # Use /events endpoint with closed=false (returns only active events)
+        url = f"{config.POLYMARKET_GAMMA_API}/events"
         params = {
-            "limit": 500,  # Get more markets
-            "active": "true"
+            "active": "true",
+            "closed": "false",
+            "limit": 100
         }
 
         response = requests.get(url, params=params)
         response.raise_for_status()
-        markets = response.json()
+        events = response.json()
 
-        logger.info(f"  API returned {len(markets)} total markets")
+        logger.info(f"  API returned {len(events)} active events")
 
-        # Find markets mentioning the query and filter by date
+        # Extract all markets from events and search
         matching_markets = []
         query_lower = query.lower()
-        now = datetime.now(datetime.now().astimezone().tzinfo)
+        total_markets = 0
 
-        filtered_count = 0
-        query_matched = 0
+        for event in events:
+            event_markets = event.get("markets", [])
+            total_markets += len(event_markets)
 
-        for market in markets:
-            question = market.get("question", "")
-            question_lower = question.lower()
+            for market in event_markets:
+                question = market.get("question", "")
+                question_lower = question.lower()
 
-            # Match query
-            if query_lower not in question_lower:
-                continue
+                # Match query in question or event title
+                event_title = event.get("title", "").lower()
+                if query_lower in question_lower or query_lower in event_title:
+                    # Add event title to market for context
+                    market["event_title"] = event.get("title", "")
+                    matching_markets.append(market)
 
-            query_matched += 1
-
-            # Filter out closed/expired markets
-            end_date = market.get("endDate", "")
-
-            # Skip if no valid end date
-            if not end_date or end_date == "":
-                filtered_count += 1
-                continue
-
-            try:
-                # Parse ISO date
-                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                # Skip if already ended (must be in future)
-                if end_dt < now:
-                    filtered_count += 1
-                    continue
-            except:
-                # If parsing fails, skip it
-                filtered_count += 1
-                continue
-
-            matching_markets.append(market)
-
-        logger.info(f"  Query matched {query_matched} markets, {filtered_count} filtered by date")
-        logger.info(f"  Found {len(matching_markets)} markets")
+        logger.info(f"  Searched {total_markets} markets from {len(events)} events")
+        logger.info(f"  Found {len(matching_markets)} matching markets")
         return matching_markets
 
     except Exception as e:
@@ -92,69 +74,40 @@ def list_popular_markets():
 
     try:
         import requests
-        from datetime import datetime
 
-        url = f"{config.POLYMARKET_GAMMA_API}/markets"
+        # Use /events endpoint with closed=false (returns only active events)
+        url = f"{config.POLYMARKET_GAMMA_API}/events"
         params = {
-            "limit": 500,  # Get more to filter (many are old)
-            "active": "true"
+            "active": "true",
+            "closed": "false",
+            "limit": 20
         }
 
         response = requests.get(url, params=params)
         response.raise_for_status()
-        all_markets = response.json()
+        events = response.json()
 
-        # Filter out expired/old markets
-        from datetime import timezone as tz
-        now = datetime.now(tz.utc)
+        # Extract all markets from events
         markets = []
-
-        no_end_date = 0
-        parse_failed = 0
-        already_ended = 0
-        valid_markets = 0
-
-        for market in all_markets:
-            end_date = market.get("endDate", "")
-
-            # Must have valid end date
-            if not end_date or end_date == "":
-                no_end_date += 1
-                continue
-
-            try:
-                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                # Skip if already ended (must be in future)
-                if end_dt < now:
-                    already_ended += 1
-                    continue
-                else:
-                    valid_markets += 1
-            except Exception as e:
-                # If parsing fails, skip it
-                parse_failed += 1
-                continue
-
-            markets.append(market)
+        for event in events:
+            event_markets = event.get("markets", [])
+            for market in event_markets:
+                # Add event title to market for context
+                market["event_title"] = event.get("title", "")
+                markets.append(market)
 
             if len(markets) >= 20:
-                break  # Got enough markets
-
-        logger.info(f"DEBUG: no_end_date={no_end_date}, parse_failed={parse_failed}, already_ended={already_ended}, valid={valid_markets}")
+                break
 
         logger.info(f"\n📊 Top {len(markets)} Active Markets:")
-        for i, market in enumerate(markets, 1):
+        for i, market in enumerate(markets[:20], 1):
             question = market.get("question", "N/A")
-            end_date = market.get("endDate", "")
-            try:
-                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                date_str = dt.strftime("%Y-%m-%d")
-            except:
-                date_str = "N/A"
+            event_title = market.get("event_title", "")
+            logger.info(f"  {i}. {question[:70]}...")
+            if event_title:
+                logger.info(f"      (Event: {event_title[:50]})")
 
-            logger.info(f"  {i}. {question[:70]}... (ends: {date_str})")
-
-        return markets
+        return markets[:20]
 
     except Exception as e:
         logger.error(f"Error fetching markets: {e}")
