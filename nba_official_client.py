@@ -9,7 +9,7 @@ Provides access to:
 import requests
 import time
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -80,8 +80,9 @@ class NBAOfficialClient:
                 return cached_data
 
         try:
-            # Get today's scoreboard
-            today = datetime.now().strftime("%Y-%m-%d")
+            # Get today's scoreboard in US Eastern Time (where NBA games are scheduled)
+            us_eastern = timezone(timedelta(hours=-5))  # EST (UTC-5)
+            today = datetime.now(us_eastern).strftime("%Y-%m-%d")
 
             url = f"{self.base_url}/scoreboardv3"
             params = {
