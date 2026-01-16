@@ -80,44 +80,79 @@ def list_popular_markets():
 
 def place_test_trade(trader, market):
     """Place a $1 test trade on the market"""
+    import json
+
     question = market.get("question", "Unknown")
     logger.info(f"\n📊 Market: {question}")
 
-    # Get outcomes
+    # Get outcomes - sometimes it's a JSON string, sometimes it's already a list
     outcomes = market.get("outcomes", [])
+
+    # Parse if it's a JSON string
+    if isinstance(outcomes, str):
+        try:
+            outcomes = json.loads(outcomes)
+            logger.debug(f"Parsed outcomes from JSON string")
+        except:
+            logger.error("Could not parse outcomes JSON")
+            return False
+
     if not outcomes:
         logger.error("No outcomes found in market")
         return False
 
-    logger.info("\n📋 Available outcomes:")
-    for i, outcome in enumerate(outcomes):
-        if isinstance(outcome, dict):
-            name = outcome.get("name", outcome.get("label", "Unknown"))
-            price = outcome.get("price", 0.5)
-            token_id = outcome.get("token_id", outcome.get("tokenId", "N/A"))
-            logger.info(f"  {i+1}. {name} @ {price:.3f} (token: {token_id})")
-        else:
-            logger.info(f"  {i+1}. {outcome}")
+    logger.info(f"\n📋 Available outcomes (type: {type(outcomes).__name__}):")
+
+    # Handle different outcome formats
+    parsed_outcomes = []
+
+    if isinstance(outcomes, list) and len(outcomes) > 0:
+        # Check if outcomes are strings like ["Yes", "No"]
+        if isinstance(outcomes[0], str):
+            # Get token IDs from market level
+            yes_token = market.get("clobTokenIds", [None, None])[0]
+            no_token = market.get("clobTokenIds", [None, None])[1]
+
+            for i, outcome_name in enumerate(outcomes):
+                token = yes_token if i == 0 else no_token
+                parsed_outcomes.append({
+                    "name": outcome_name,
+                    "token_id": token
+                })
+                logger.info(f"  {i+1}. {outcome_name} (token: {token})")
+
+        # Or if outcomes are dicts
+        elif isinstance(outcomes[0], dict):
+            for i, outcome in enumerate(outcomes):
+                name = outcome.get("name", outcome.get("label", "Unknown"))
+                token = outcome.get("token_id", outcome.get("tokenId"))
+                price = outcome.get("price", 0.5)
+                parsed_outcomes.append({
+                    "name": name,
+                    "token_id": token,
+                    "price": price
+                })
+                logger.info(f"  {i+1}. {name} @ {price:.3f} (token: {token})")
 
     # Get token ID for "Yes" or first outcome
     token_id = None
     bet_on = "Yes"
 
-    for outcome in outcomes:
-        if isinstance(outcome, dict):
-            name = outcome.get("name", outcome.get("label", ""))
-            if name.lower() == "yes":
-                token_id = outcome.get("token_id") or outcome.get("tokenId")
-                break
+    for outcome in parsed_outcomes:
+        name = outcome.get("name", "")
+        if name.lower() == "yes":
+            token_id = outcome.get("token_id")
+            bet_on = name
+            break
 
     # Fallback to first outcome
-    if not token_id and outcomes:
-        if isinstance(outcomes[0], dict):
-            token_id = outcomes[0].get("token_id") or outcomes[0].get("tokenId")
-            bet_on = outcomes[0].get("name", outcomes[0].get("label", "First option"))
+    if not token_id and parsed_outcomes:
+        token_id = parsed_outcomes[0].get("token_id")
+        bet_on = parsed_outcomes[0].get("name", "First option")
 
     if not token_id:
         logger.error("Could not find token ID")
+        logger.error(f"DEBUG: Market data: {market}")
         return False
 
     logger.info(f"\n💰 Will bet $1 on: {bet_on}")
