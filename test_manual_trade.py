@@ -35,10 +35,15 @@ def search_markets(query):
         response.raise_for_status()
         markets = response.json()
 
+        logger.info(f"  API returned {len(markets)} total markets")
+
         # Find markets mentioning the query and filter by date
         matching_markets = []
         query_lower = query.lower()
         now = datetime.now(datetime.now().astimezone().tzinfo)
+
+        filtered_count = 0
+        query_matched = 0
 
         for market in markets:
             question = market.get("question", "").lower()
@@ -46,6 +51,8 @@ def search_markets(query):
             # Match query
             if query_lower not in question:
                 continue
+
+            query_matched += 1
 
             # Filter out closed/expired markets
             end_date = market.get("endDate", "")
@@ -55,12 +62,14 @@ def search_markets(query):
                     end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                     # Skip if already ended (before now)
                     if end_dt < now:
+                        filtered_count += 1
                         continue
                 except:
                     pass  # If parsing fails, include the market
 
             matching_markets.append(market)
 
+        logger.info(f"  Query matched {query_matched} markets, {filtered_count} filtered by date")
         logger.info(f"  Found {len(matching_markets)} markets")
         return matching_markets
 
