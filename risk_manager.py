@@ -36,7 +36,7 @@ class RiskManager:
 
     def __init__(self, max_total_exposure_usdc: float = 50.0):
         self.max_total_exposure_usdc = max_total_exposure_usdc
-        self.min_signal_confidence = 0.6
+        self.min_signal_confidence = 0.5
         self.trades_executed = 0
         self.trades_won = 0
         self.trades_lost = 0
